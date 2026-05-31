@@ -5,8 +5,31 @@ configDotenv()
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY})
 const model = 'gemini-3.1-flash-live-preview'
-const config = { responseModalities: [Modality.AUDIO] }
 const wss = new WebSocketServer({ port: 8080 })
+const config = { 
+    responseModalities: [Modality.AUDIO],
+    tools: [{
+        functionDeclarations: [{
+            name: 'control_device',
+            description: 'Mengontrol perangkat rumah pintar seperti lampu, kipas, dll.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    topic: {
+                        type: 'string',
+                        description: 'MQTT topic perangkat, contoh: home/living-room/lamp-main, home/bedroom01/fan, home/kitchen/lamp-main'
+                    },
+                    state: {
+                        type: 'string',
+                        enum: ['ON', 'OFF'],
+                        description: 'Status Perangkat'
+                    }
+                },
+                required: ['topic', 'state']
+            }
+        }]
+    }]
+}
 
 wss.on('connection', async (clientWs) => {
     const session = await ai.live.connect({
