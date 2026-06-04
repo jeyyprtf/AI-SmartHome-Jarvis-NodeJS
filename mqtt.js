@@ -15,7 +15,7 @@ export function publish(topic, state) {
 
 client.on('connect', () => {
     console.log('[MQTT] Connected')
-    publish('home/living-room/lamp-main', 'ON')
+    // publish('home/living-room/lamp-main', 'ON')
 })
 
 client.on('error', (err) => console.error('[MQTT] Error: ', err))
