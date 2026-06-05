@@ -6,7 +6,7 @@ configDotenv()
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY})
 const model = 'gemini-3.1-flash-live-preview'
-const wss = new WebSocketServer({ port: 8080 })
+const wss = new WebSocketServer({ port: process.env.SERVER_PORT || process.env.PORT || 8080 })
 const config = { 
     responseModalities: [Modality.AUDIO],
     systemInstruction: {
@@ -39,7 +39,8 @@ Ruangan dan perangkat yang tersedia HANYA berikut ini:
 - home/terrace/lamp-main
 
 Jika user meminta perangkat atau ruangan yang tidak ada, tolak dengan sopan 
-dan informasikan perangkat yang tersedia. Jangan mengarang topic MQTT di luar daftar.`
+dan informasikan perangkat yang tersedia. Jangan mengarang topic MQTT di luar daftar.
+Jika pengguna mengakhiri percakapan (misalnya mengucapkan terima kasih, pamit, atau selamat tinggal), panggil fungsi end_session.`
         }]
     },
     tools: [{
@@ -61,6 +62,9 @@ dan informasikan perangkat yang tersedia. Jangan mengarang topic MQTT di luar da
                 },
                 required: ['topic', 'state']
             }
+        }, {
+            name: 'end_session',
+            description: 'Mengakhiri sesi percakapan. Panggil fungsi ini jika pengguna menyatakan percakapan selesai, mengucapkan terima kasih, atau pamit.'
         }]
     }]
 }
@@ -76,20 +80,40 @@ wss.on('connection', async (clientWs) => {
                 const content = message.serverContent
 
                 if (message.toolCall) {
-                    const call = message.toolCall.functionCalls[0]
-                    const { topic, state } = call.args
+                    const functionCalls = message.toolCall.functionCalls;
+                    const functionResponses = [];
 
-                    console.log(`[TOOL CALL] ${call.name}, > ${topic} : ${state}`)
-                    publish(topic, state)
+                    for (const call of functionCalls) {
+                        if (call.name === 'control_device') {
+                            const { topic, state } = call.args;
 
-                    //kirim toolResponse balik ke Gemini
-                    session.sendToolResponse({
-                        functionResponses: [{
-                            id: call.id,
-                            name: call.name,
-                            response: { output: `${topic} is now ${state}`}
-                        }]
-                    })
+                            console.log(`[TOOL CALL] ${call.name}, > ${topic} : ${state}`);
+                            publish(topic, state);
+
+                            functionResponses.push({
+                                id: call.id,
+                                name: call.name,
+                                response: { output: `${topic} is now ${state}`}
+                            });
+                        } else if (call.name === 'end_session') {
+                            console.log(`[TOOL CALL] ${call.name}`);
+                            if (clientWs.readyState === clientWs.OPEN) {
+                                clientWs.send(JSON.stringify({ type: 'session_end' }));
+                            }
+                            functionResponses.push({
+                                id: call.id,
+                                name: call.name,
+                                response: { output: 'Session ended' }
+                            });
+                        }
+                    }
+
+                    // Kirim semua toolResponse balik ke Gemini sekaligus
+                    if (functionResponses.length > 0) {
+                        session.sendToolResponse({
+                            functionResponses: functionResponses
+                        });
+                    }
                 }
 
                 // RECIEVE AUDIO
